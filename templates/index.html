@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NBKR Currency Dashboard</title>
+  <meta name="description" content="Daily exchange rates from the National Bank of Kyrgyzstan – USD, EUR, KZT, CNY, UZS, RUB vs KGS" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #080c18;
+      --s1:      #0f1624;
+      --s2:      #161f33;
+      --border:  rgba(255,255,255,0.07);
+      --text:    #e2e8f0;
+      --muted:   #4e607a;
+      --accent:  #6366f1;
+      --acc2:    #818cf8;
+      --green:   #22c55e;
+      --red:     #ef4444;
+      --glow:    rgba(99,102,241,0.22);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      overflow-x: hidden;
+    }
+
+    .container { max-width: 1240px; margin: 0 auto; padding: 0 24px; }
+
+    /* ── SCROLLBAR ────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 8px; height: 8px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--s2); border-radius: 10px; border: 2px solid var(--bg); }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+    /* ── HEADER ───────────────────────────────────────────── */
+    header {
+      padding: 24px 0;
+      border-bottom: 1px solid var(--border);
+      background: rgba(8, 12, 24, 0.8);
+      backdrop-filter: blur(12px);
+      position: sticky; top: 0; z-index: 100;
+    }
+
+    .header-inner {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 20px;
+    }
+
+    .logo { display: flex; align-items: center; gap: 14px; }
+    .logo-badge {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--acc2));
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; color: #fff;
+      box-shadow: 0 4px 15px var(--glow);
+    }
+    .logo-title { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+    .logo-sub { font-size: 0.72rem; color: var(--muted); font-weight: 500; margin-top: -2px; }
+
+    .h-right { display: flex; align-items: center; gap: 24px; }
+
+    .status-pill {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 14px; border-radius: 99px;
+      background: var(--s2); border: 1px solid var(--border);
+      font-size: 0.72rem; font-weight: 700; color: var(--text);
+    }
+    .s-dot { width: 7px; height: 7px; border-radius: 50%; background: #4e607a; }
+    .s-dot.live { background: var(--green); box-shadow: 0 0 10px var(--green); animation: pulse 2s infinite; }
+    .s-dot.err  { background: var(--red); box-shadow: 0 0 10px var(--red); }
+    @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.5; } 100% { opacity: 1; } }
+
+    #clock-badge { font-size: 0.75rem; font-weight: 600; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+    .btn {
+      display: inline-flex; align-items: center; gap: 8px;
+      padding: 10px 20px; border-radius: 10px;
+      font-size: 0.82rem; font-weight: 700; cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      border: none; text-decoration: none;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #6366f1, #7c3aed);
+      color: #fff;
+      box-shadow: 0 4px 18px var(--glow);
+    }
+    .btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 28px rgba(99,102,241,.42); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; transform: none; }
+
+    .btn-ghost {
+      background: var(--s2); color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { border-color: var(--accent); color: var(--acc2); }
+
+    .spinner {
+      width: 15px; height: 15px;
+      border: 2px solid rgba(255,255,255,.25);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      display: none;
+    }
+    .spinner.on { display: block; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── TOAST ──────────────────────────────────────────────── */
+    #toasts {
+      position: fixed; bottom: 26px; right: 26px;
+      z-index: 9999;
+      display: flex; flex-direction: column; gap: 10px;
+    }
+    .toast {
+      display: flex; align-items: center; gap: 10px;
+      padding: 13px 18px;
+      border-radius: 12px;
+      font-size: 0.83rem; font-weight: 500;
+      backdrop-filter: blur(18px);
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 32px rgba(0,0,0,.45);
+      animation: tIn .3s cubic-bezier(.34,1.56,.64,1);
+      max-width: 340px;
+    }
+    .toast.ok  { background: rgba(34,197,94,.14);  border-color: rgba(34,197,94,.28); }
+    .toast.bad { background: rgba(239,68,68,.14);   border-color: rgba(239,68,68,.28); }
+    .toast.inf { background: rgba(99,102,241,.14);  border-color: rgba(99,102,241,.28); }
+    @keyframes tIn { from{opacity:0;transform:translateX(28px)} to{opacity:1;transform:translateX(0)} }
+
+    /* ── MAIN ───────────────────────────────────────────────── */
+    main { padding: 38px 0 70px; }
+
+    .sec-head {
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 12px; flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+
+    .sec-title {
+      font-size: 0.95rem; font-weight: 700;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    .sec-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--accent); box-shadow: 0 0 8px var(--accent);
+    }
+
+    .pill {
+      font-size: 0.7rem; font-weight: 700;
+      padding: 3px 10px; border-radius: 99px;
+      background: rgba(99,102,241,.14);
+      color: var(--acc2);
+      border: 1px solid rgba(99,102,241,.22);
+    }
+
+    /* ── CARDS ──────────────────────────────────────────────── */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(185px, 1fr));
+      gap: 14px;
+      margin-bottom: 38px;
+    }
+
+    .c-card {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 18px;
+      padding: 20px 20px 16px;
+      cursor: pointer;
+      transition: transform .22s, border-color .22s, box-shadow .22s;
+      position: relative; overflow: hidden;
+    }
+
+    .c-card::after {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0;
+      height: 2px;
+      background: var(--cc, var(--accent));
+      opacity: .55;
+    }
+
+    .c-card:hover {
+      transform: translateY(-3px);
+      border-color: var(--cc, var(--accent));
+      box-shadow: 0 10px 32px rgba(0,0,0,.35);
+    }
+
+    .c-card.sel {
+      border-color: var(--cc, var(--accent));
+      background: var(--s2);
+      box-shadow: 0 4px 20px rgba(0,0,0,.2);
+    }
+
+    .c-head { display: flex; align-items: center; gap: 10px; margin-bottom: 15px; }
+    .c-flag { width: 26px; height: 18px; border-radius: 3px; object-fit: cover; border: 1px solid rgba(255,255,255,.1); }
+    .c-flag-fb { width: 26px; height: 18px; background: var(--s2); border-radius: 3px; display: flex; align-items: center; justify-content: center; font-size: 0.5rem; font-weight: 800; border: 1px solid var(--border); }
+    .c-code { font-size: 0.9rem; font-weight: 800; letter-spacing: 0.02em; color: #fff; }
+    .c-name { font-size: 0.7rem; color: var(--muted); font-weight: 600; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .c-val { font-size: 1.4rem; font-weight: 800; color: #fff; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+
+    .c-val.shim {
+      background: linear-gradient(90deg, var(--s2) 25%, var(--s1) 50%, var(--s2) 75%);
+      background-size: 200% 100%;
+      animation: shim 1.4s infinite;
+      border-radius: 6px;
+      width: 90px; height: 32px;
+    }
+    @keyframes shim { 0%{background-position:200% 0} 100%{background-position:-200% 0} }
+
+    .c-sub { font-size: 0.68rem; color: var(--muted); margin-top: 3px; }
+
+    .c-chg {
+      font-size: 0.7rem; font-weight: 700;
+      margin-top: 8px; display: flex; align-items: center; gap: 3px;
+    }
+    .up   { color: var(--green); }
+    .down { color: var(--red); }
+    .flat { color: var(--muted); }
+
+    /* ── EXCEL COPY PANEL ───────────────────────────────────── */
+    .excel-box {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 22px 28px;
+      margin-bottom: 38px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .excel-box::before {
+      content: '';
+      position: absolute; top: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, #217346, #4ade80, #217346);
+      opacity: .7;
+    }
+
+    .excel-row-wrap {
+      margin-top: 16px;
+      display: flex;
+      align-items: stretch;
+      gap: 0;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 12px;
+      overflow: hidden;
+      background: var(--s2);
+    }
+
+    .xl-cell {
+      flex: 1;
+      min-width: 0;
+      padding: 10px 12px;
+      border-right: 1px solid rgba(255,255,255,.07);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: background .15s;
+    }
+
+    .xl-cell:last-child { border-right: none; }
+    .xl-cell:hover { background: rgba(255,255,255,.04); }
+
+    .xl-label {
+      font-size: 0.64rem; font-weight: 800;
+      letter-spacing: .07em; text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .xl-value {
+      font-size: 0.88rem; font-weight: 700;
+      font-variant-numeric: tabular-nums;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .xl-value.na { color: var(--muted); font-weight: 400; font-size: .78rem; }
+    .xl-value.loading { color: var(--muted); animation: blink 1.2s infinite; }
+
+    .excel-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+
+    .copy-hint {
+      font-size: 0.74rem;
+      color: var(--muted);
+      flex: 1;
+    }
+
+    .btn-excel {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 18px;
+      border-radius: 9px;
+      font: 600 0.82rem 'Inter', sans-serif;
+      cursor: pointer; border: none;
+      background: linear-gradient(135deg, #1a5e35, #217346);
+      color: #fff;
+      box-shadow: 0 3px 14px rgba(33,115,70,.35);
+      transition: all .2s;
+    }
+    .btn-excel:hover { transform: translateY(-1px); box-shadow: 0 5px 20px rgba(33,115,70,.5); }
+    .btn-excel:active { transform: translateY(0); }
+    .btn-excel.copied {
+      background: linear-gradient(135deg, #14532d, #16a34a);
+    }
+
+    .btn-excel-date {
+      display: inline-flex; align-items: center; gap: 7px;
+      padding: 8px 18px;
+      border-radius: 9px;
+      font: 600 0.82rem 'Inter', sans-serif;
+      cursor: pointer;
+      background: var(--s2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      transition: all .2s;
+    }
+    .btn-excel-date:hover { border-color: #217346; color: #4ade80; }
+
+    /* ── CHART ──────────────────────────────────────────────── */
+    .chart-box {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 26px 28px;
+      margin-bottom: 38px;
+    }
+
+    .chart-tabs {
+      display: flex; gap: 7px; flex-wrap: wrap;
+    }
+
+    .c-tab {
+      display: flex; align-items: center; gap: 6px;
+      font: 600 0.77rem 'Inter', sans-serif;
+      padding: 5px 13px;
+      border-radius: 8px;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: transparent; color: var(--muted);
+      transition: all .18s;
+    }
+    .c-tab img { width: 16px; height: 11px; border-radius: 2px; object-fit: cover; border: 1px solid rgba(255,255,255,.1); }
+    .c-tab:hover { color: var(--text); border-color: rgba(255,255,255,.15); }
+    .c-tab.sel  { background: var(--s2); color: #fff; border-color: var(--accent); }
+
+    .chart-wrap {
+      margin-top: 22px; height: 270px; position: relative;
+    }
+
+    #no-chart {
+      position: absolute; inset: 0;
+      display: none;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 8px;
+      background: rgba(15, 22, 36, 0.7);
+      backdrop-filter: blur(4px);
+      border-radius: 12px;
+      color: var(--muted);
+      font-size: 0.85rem; font-weight: 500;
+    }
+    #no-chart.show { display: flex; z-index: 10; }
+
+    canvas#chart { width: 100% !important; height: 100% !important; }
+
+    /* ── TABLE ──────────────────────────────────────────────── */
+    .tbl-box {
+      background: var(--s1);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      overflow: hidden;
+    }
+
+    .tbl-head {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      gap: 16px; flex-wrap: wrap;
+    }
+
+    .search-wrap {
+      position: relative;
+      background: var(--s2);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      display: flex; align-items: center;
+      padding: 0 12px;
+      width: 240px;
+    }
+
+    .search-ico { color: var(--muted); font-size: 0.9rem; margin-right: 8px; }
+
+    #t-search {
+      background: transparent; border: none; outline: none;
+      color: var(--text); font-size: 0.82rem; padding: 9px 0;
+      width: 100%;
+    }
+    #t-search::placeholder { color: var(--muted); }
+
+    .tbl-scroll { overflow-x: auto; width: 100%; }
+
+    table { width: 100%; border-collapse: collapse; text-align: left; min-width: 600px; }
+
+    thead th {
+      padding: 14px 26px;
+      background: rgba(255,255,255,0.02);
+      color: var(--muted);
+      font-size: 0.68rem; font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    thead th .th-flag {
+      width: 15px; height: 10px; border-radius: 2px;
+      object-fit: cover; vertical-align: middle;
+      margin-right: 5px;
+      border: 1px solid rgba(255,255,255,.1);
+    }
+
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .13s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--s2); }
+
+    tbody td {
+      padding: 11px 16px;
+      font-size: 0.84rem; white-space: nowrap;
+    }
+
+    .td-date { color: var(--muted); font-weight: 600; font-size: 0.78rem; }
+    .td-v    { font-weight: 500; font-variant-numeric: tabular-nums; }
+    .td-na   { color: var(--muted); font-size: 0.76rem; }
+
+    .tbl-foot {
+      padding: 12px 26px;
+      border-top: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.75rem; color: var(--muted);
+    }
+
+    .empty-row { text-align: center; padding: 44px 16px; color: var(--muted); font-size: 0.88rem; }
+
+    @media (max-width: 600px) {
+      .cards { grid-template-columns: repeat(2,1fr); }
+    }
+
+    /* ── ERROR OVERLAY ── */
+    #critical-error {
+        position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(8, 12, 24, 0.95);
+        color: #ff4757;
+        z-index: 10000;
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 40px;
+        text-align: center;
+    }
+    #critical-error.show { display: flex; }
+    #critical-error pre {
+        background: #1e272e; color: #fff;
+        padding: 20px; border-radius: 8px;
+        margin-top: 20px; font-size: 0.8rem;
+        text-align: left; max-width: 100%; overflow: auto;
+    }
+  </style>
+</head>
+<body>
+
+<div id="critical-error">
+    <h1>⚠️ Script Error</h1>
+    <p>The dashboard failed to initialize due to a JavaScript error.</p>
+    <pre id="error-box"></pre>
+    <button class="btn btn-primary" style="margin-top:20px" onclick="location.reload()">Refresh Page</button>
+</div>
+
+<!-- HEADER -->
+<header>
+  <div class="container header-inner">
+    <div class="logo">
+      <div class="logo-badge">💱</div>
+      <div>
+        <div class="logo-title">NBKR Rates</div>
+        <div class="logo-sub">National Bank of Kyrgyzstan · Exchange vs KGS</div>
+      </div>
+    </div>
+    <div class="h-right">
+      <div class="status-pill">
+        <div class="s-dot" id="s-dot"></div>
+        <span id="s-txt">Connecting…</span>
+      </div>
+      <div id="clock-badge">—</div>
+      <button class="btn btn-primary" id="fetch-btn" onclick="fetchToday()">
+        <div class="spinner" id="fetch-spin"></div>
+        <span id="fetch-lbl">⬇ Fetch Today</span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<!-- MAIN -->
+<main>
+<div class="container">
+
+  <!-- CARDS -->
+  <div class="sec-head">
+    <div class="sec-title"><div class="sec-dot"></div>Live Rates <span style="color:var(--muted);font-weight:400;font-size:.8rem">&nbsp;per 1 unit → KGS</span></div>
+    <span class="pill" id="rates-date">—</span>
+  </div>
+  <div class="cards" id="cards"></div>
+
+  <!-- EXCEL COPY PANEL -->
+  <div class="excel-box" id="excel-box">
+    <div class="sec-head" style="margin-bottom:0">
+      <div class="sec-title">
+        <div class="sec-dot" style="background:#4ade80;box-shadow:0 0 8px #4ade80"></div>
+        Copy for Excel
+        <span style="color:var(--muted);font-weight:400;font-size:.8rem">&nbsp;paste-ready tab-separated row</span>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn-excel-date" id="btn-copy-with-date" onclick="copyForExcel(true)">
+          📋 Copy with Date
+        </button>
+        <button class="btn-excel" id="btn-copy" onclick="copyForExcel(false)">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          Copy Values
+        </button>
+      </div>
+    </div>
+
+    <!-- Visual Excel-style row -->
+    <div class="excel-row-wrap" id="xl-row">
+      <!-- filled by JS -->
+    </div>
+
+    <div class="excel-actions">
+      <span class="copy-hint" id="xl-hint">Fetching rates… click "Fetch Today" or wait for live load.</span>
+    </div>
+  </div>
+
+  <!-- CHART -->
+  <div class="chart-box">
+    <div class="sec-head" style="margin-bottom:0">
+      <div class="sec-title"><div class="sec-dot"></div>Rate Trend&nbsp;<span style="color:var(--muted);font-weight:400;font-size:.8rem">last 30 records</span></div>
+      <div class="chart-tabs" id="chart-tabs"></div>
+    </div>
+    <div class="chart-wrap">
+      <canvas id="chart"></canvas>
+      <div id="no-chart">
+        <span style="font-size:2.2rem">📊</span>
+        <span>No saved history yet — click "Fetch Today" to start.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- TABLE -->
+  <div class="tbl-box">
+    <div class="tbl-head">
+      <div class="sec-title"><div class="sec-dot"></div>Exchange Rate History</div>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <div class="search-wrap">
+          <span class="search-ico">⌕</span>
+          <input type="text" id="t-search" placeholder="Filter by date…" oninput="filterTable()" />
+        </div>
+        <button class="btn btn-ghost" onclick="loadHistory()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="tbl-scroll">
+      <table>
+        <thead id="t-head"></thead>
+        <tbody id="t-body">
+          <tr><td colspan="7" class="empty-row">Loading…</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="tbl-foot">
+      <span id="t-count">—</span>
+      <span>Source: nbkr.kg</span>
+    </div>
+  </div>
+
+</div>
+</main>
+
+<div id="toasts"></div>
+
+<script>
+// Error handler to show on screen
+window.onerror = function(msg, url, lineNo, columnNo, error) {
+    const errorBox = document.getElementById('error-box');
+    const overlay = document.getElementById('critical-error');
+    if (errorBox && overlay) {
+        overlay.classList.add('show');
+        errorBox.textContent = `Error: ${msg}\nLine: ${lineNo}\nColumn: ${columnNo}\nStack: ${error?.stack || 'N/A'}`;
+    }
+    return false;
+};
+
+/* ── DATA ─────────────────────────────────────────────────────── */
+const CURS = ['USD','EUR','KZT','CNY','UZS','RUB'];
+const META = {
+  USD:{ name:'US Dollar',          cc:'us',  flag:'https://flagcdn.com/w40/us.png',  color:'#4ade80' },
+  EUR:{ name:'Euro',               cc:'eu',  flag:'https://flagcdn.com/w40/eu.png',  color:'#60a5fa' },
+  KZT:{ name:'Kazakhstani Tenge',  cc:'kz',  flag:'https://flagcdn.com/w40/kz.png',  color:'#f59e0b' },
+  CNY:{ name:'Chinese Yuan',       cc:'cn',  flag:'https://flagcdn.com/w40/cn.png',  color:'#f87171' },
+  UZS:{ name:'Uzbek Sum',          cc:'uz',  flag:'https://flagcdn.com/w40/uz.png',  color:'#c084fc' },
+  RUB:{ name:'Russian Ruble',      cc:'ru',  flag:'https://flagcdn.com/w40/ru.png',  color:'#34d399' },
+};
+
+let liveRates  = {};
+let histData   = [];
+let allRows    = [];
+let chartInst  = null;
+let selCur     = 'USD';
+
+/* ── BOOT ─────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  try {
+    tick(); setInterval(tick, 1000);
+    buildTableHead();
+    buildChartTabs();
+    renderCards(null);           // skeleton
+    loadHistory().then(() => loadLive()); // history first so changes can compute
+  } catch(e) {
+      window.onerror(e.message, null, null, null, e);
+  }
+});
+
+/* ── CLOCK ────────────────────────────────────────────────────── */
+function tick() {
+  const n = new Date();
+  const el = document.getElementById('clock-badge');
+  if (el) {
+    el.textContent =
+      n.toLocaleDateString('en-GB',{weekday:'short',day:'2-digit',month:'short',year:'numeric'}) +
+      ' · ' + n.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'});
+  }
+}
+
+/* ── LIVE RATES ───────────────────────────────────────────────── */
+async function loadLive() {
+  try {
+    const r = await fetch('/api/rates/today');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    liveRates = d.rates;
+    renderCards(d.rates);
+    const dt = new Date(d.date + 'T00:00:00');
+    document.getElementById('rates-date').textContent =
+      dt.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    setStatus(true);
+    computeChanges();
+    renderExcelRow(d.rates, d.date);
+  } catch(e) {
+    setStatus(false, String(e.message).slice(0,40));
+    showToast('Live fetch failed: '+e.message, 'bad');
+    renderCards({});
+  }
+}
+
+/* ── RENDER CARDS ─────────────────────────────────────────────── */
+function renderCards(rates) {
+  const wrap = document.getElementById('cards');
+  if (!wrap) return;
+  wrap.innerHTML = CURS.map(cur => {
+    const m   = META[cur];
+    const val = (rates && rates[cur] != null) ? Number(rates[cur]) : null;
+    return `
+    <div class="c-card ${cur===selCur?'sel':''}" id="card-${cur}"
+         style="--cc:${m.color}" onclick="selectCur('${cur}')">
+      <div class="c-head">
+        <img class="c-flag" src="${m.flag}" alt="${cur}"
+             onerror="this.outerHTML='<div class=c-flag-fb>${cur}</div>'"/>
+        <span class="c-code">${cur}</span>
+      </div>
+      <div class="c-name">${m.name}</div>
+      <div class="c-val ${val===null?'shim':''}" id="v-${cur}">
+        ${val!==null ? val.toFixed(4).replace(".", ",") : ''}
+      </div>
+      <div class="c-sub">per 1 ${cur} → KGS</div>
+      <div class="c-chg flat" id="chg-${cur}">— —</div>
+    </div>`;
+  }).join('');
+}
+
+/* ── EXCEL COPY ──────────────────────────────────────────────── */
+function renderExcelRow(rates, dateStr) {
+  const row  = document.getElementById('xl-row');
+  const hint = document.getElementById('xl-hint');
+  if (!row) return;
+
+  row.innerHTML = CURS.map(cur => {
+    const val = (rates && rates[cur] != null) ? Number(rates[cur]).toFixed(4).replace(".", ",") : null;
+    return `
+    <div class="xl-cell">
+      <div class="xl-label">${cur}</div>
+      <div class="xl-value ${val===null?'na':''}" id="xl-v-${cur}">${val !== null ? val : 'N/A'}</div>
+    </div>`;
+  }).join('');
+
+  const d = dateStr ? new Date(dateStr+'T00:00:00').toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '—';
+  if (hint) {
+    hint.textContent = `Ready · ${d} · Select "Copy Value" (row only) or "Copy with Date" (date + row)`;
+  }
+}
+
+function copyForExcel(withDate) {
+  const vals = CURS.map(cur => {
+    const el = document.getElementById('xl-v-'+cur);
+    return (el && el.textContent.trim() !== 'N/A') ? el.textContent.trim() : '';
+  });
+
+  if (vals.every(v => v === '')) {
+    showToast("No rates loaded yet - fetch today's rates first.", "bad");
+    return;
+  }
+
+  let text;
+  if (withDate) {
+    const today = new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'2-digit',year:'numeric'});
+    text = [today, ...vals].join('\t');
+  } else {
+    text = vals.join('\t');
+  }
+
+  navigator.clipboard.writeText(text).then(() => {
+    const btnId = withDate ? 'btn-copy-with-date' : 'btn-copy';
+    const btn = document.getElementById(btnId);
+    const orig = btn.innerHTML;
+    btn.innerHTML = withDate ? '✅ Copied!' : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Copied!';
+    btn.classList.add('copied');
+    showToast(`Copied ${withDate?'(date + row)':'(row only)'} — paste into Excel now`, 'ok');
+    setTimeout(() => { btn.innerHTML = orig; btn.classList.remove('copied'); }, 2200);
+  }).catch(() => showToast('Clipboard access denied.', 'bad'));
+}
+
+/* ── CHANGES ──────────────────────────────────────────────────── */
+function computeChanges() {
+  if (!histData.length || !Object.keys(liveRates).length) return;
+  // find the most recent row in history
+  const sorted = [...histData].sort((a,b) => a.Curr > b.Curr ? -1 : 1);
+  const prev = sorted[0];
+  CURS.forEach(cur => {
+    const el  = document.getElementById('chg-'+cur);
+    if (!el) return;
+    const now = liveRates[cur];
+    const old = prev[cur];
+    if (now == null || old == null) { el.textContent='N/A'; el.className='c-chg flat'; return; }
+    const pct = ((now - old) / old * 100);
+    if (pct > 0.001)       { el.className='c-chg up';   el.textContent='▲ '+pct.toFixed(2)+'%'; }
+    else if (pct < -0.001) { el.className='c-chg down'; el.textContent='▼ '+Math.abs(pct).toFixed(2)+'%'; }
+    else                   { el.className='c-chg flat'; el.textContent='— 0.00%'; }
+  });
+}
+
+/* ── FETCH & SAVE ─────────────────────────────────────────────── */
+async function fetchToday() {
+  const btn = document.getElementById('fetch-btn');
+  const sp  = document.getElementById('fetch-spin');
+  const lbl = document.getElementById('fetch-lbl');
+  btn.disabled = true;
+  sp.classList.add('on');
+  lbl.textContent = 'Fetching…';
+  try {
+    const r = await fetch('/api/fetch', {method:'POST'});
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    liveRates = d.rates;
+    renderCards(d.rates);
+    showToast(d.message, d.added ? 'ok' : 'inf');
+    await loadHistory();
+    computeChanges();
+    loadChartData(selCur);
+    renderExcelRow(d.rates, d.date);
+  } catch(e) {
+    showToast('Error: '+e.message, 'bad');
+  } finally {
+    btn.disabled = false;
+    sp.classList.remove('on');
+    lbl.textContent = '⬇ Fetch Today';
+  }
+}
+
+/* ── HISTORY ──────────────────────────────────────────────────── */
+async function loadHistory() {
+  try {
+    const r = await fetch('/api/history');
+    const d = await r.json();
+    if (!d.success) throw new Error(d.error);
+    histData = d.data;
+    allRows  = d.data;
+    renderTable(d.data);
+    loadChartData(selCur);
+    return d.data;
+  } catch(e) {
+    document.getElementById('t-body').innerHTML =
+      `<tr><td colspan="7" class="empty-row">⚠ ${e.message}</td></tr>`;
+  }
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('t-body');
+  if (!tbody) return;
+  if (!rows || !rows.length) {
+    tbody.innerHTML = '<tr><td colspan="7" class="empty-row">No history. Hit "Fetch Today" to save rates.</td></tr>';
+    document.getElementById('t-count').textContent = '0 records';
+    return;
+  }
+  tbody.innerHTML = rows.map(row => {
+    const d = new Date(row.Curr + 'T00:00:00');
+    const ds = d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'});
+    const cells = CURS.map(c => {
+      const v = row[c];
+      return v != null
+        ? `<td class="td-v" style="color:${META[c].color}">${Number(v).toFixed(4).replace(".", ",")}</td>`
+        : `<td class="td-na">N/A</td>`;
+    }).join('');
+    return `<tr><td class="td-date">${ds}</td>${cells}</tr>`;
+  }).join('');
+  document.getElementById('t-count').textContent = `${rows.length} record${rows.length!==1?'s':''}`;
+}
+
+function filterTable() {
+  const q = document.getElementById('t-search').value.toLowerCase();
+  renderTable(allRows.filter(r => r.Curr.toLowerCase().includes(q)));
+}
+
+/* ── TABLE HEAD ───────────────────────────────────────────────── */
+function buildTableHead() {
+  const head = document.getElementById('t-head');
+  if (!head) return;
+  head.innerHTML = `<tr>
+    <th>Date</th>
+    ${CURS.map(c => `<th>
+      <img class="th-flag" src="${META[c].flag}" alt="${c}"
+           onerror="this.style.display='none'"/>
+      ${c}
+    </th>`).join('')}
+  </tr>`;
+}
+
+/* ── CHART TABS ───────────────────────────────────────────────── */
+function buildChartTabs() {
+  const tabs = document.getElementById('chart-tabs');
+  if (!tabs) return;
+  tabs.innerHTML = CURS.map(c => `
+    <button class="c-tab ${c===selCur?'sel':''}" id="tab-${c}" onclick="selectCur('${c}')">
+      <img src="${META[c].flag}" alt="${c}" onerror="this.style.display='none'"/>
+      ${c}
+    </button>`).join('');
+}
+
+function selectCur(cur) {
+  selCur = cur;
+  CURS.forEach(c => {
+    document.getElementById('card-'+c)?.classList.toggle('sel', c===cur);
+    document.getElementById('tab-'+c)?.classList.toggle('sel', c===cur);
+  });
+  loadChartData(cur);
+}
+
+/* ── CHART ────────────────────────────────────────────────────── */
+async function loadChartData(cur) {
+  const empty = document.getElementById('no-chart');
+  try {
+    const r = await fetch(`/api/chart/${cur}`);
+    const d = await r.json();
+    if (!d.success || !d.labels.length) {
+      empty.classList.add('show');
+      if (chartInst) { chartInst.destroy(); chartInst = null; }
+      return;
+    }
+    empty.classList.remove('show');
+    drawChart(d.labels, d.values, cur, META[cur].color);
+  } catch {
+    empty.classList.add('show');
+  }
+}
+
+function drawChart(labels, values, cur, color) {
+  const canvas = document.getElementById('chart');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  if (chartInst) chartInst.destroy();
+
+  const grad = ctx.createLinearGradient(0, 0, 0, 270);
+  grad.addColorStop(0, color+'40');
+  grad.addColorStop(1, color+'00');
+
+  chartInst = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets:[{
+        label: `${cur} / KGS`,
+        data: values,
+        borderColor: color,
+        backgroundColor: grad,
+        borderWidth: 2.5,
+        pointRadius: 3.5,
+        pointHoverRadius: 6,
+        pointBackgroundColor: color,
+        tension: 0.42,
+        fill: true,
+      }]
+    },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'#1a2235',
+          borderColor: color, borderWidth:1,
+          titleColor:'#64748b', bodyColor:'#fff',
+          bodyFont:{family:'Inter',weight:'700',size:14},
+          padding:12,
+          callbacks:{ label: c => ` ${c.parsed.y.toFixed(4)} KGS` }
+        }
+      },
+      scales:{
+        x:{
+          grid:{ color:'rgba(255,255,255,.04)' },
+          ticks:{ color:'#4e607a', font:{size:10,family:'Inter'}, maxTicksLimit:10, maxRotation:0 }
+        },
+        y:{
+          grid:{ color:'rgba(255,255,255,.04)' },
+          ticks:{ color:'#4e607a', font:{size:10,family:'Inter'}, callback: v => v ? v.toFixed(2) : v }
+        }
+      }
+    }
+  });
+}
+
+/* ── STATUS ───────────────────────────────────────────────────── */
+function setStatus(online, msg) {
+  const dot = document.getElementById('s-dot');
+  const txt = document.getElementById('s-txt');
+  if (dot && txt) {
+    dot.className = 's-dot '+(online?'live':'err');
+    txt.textContent = online ? 'NBKR Live' : (msg||'Offline');
+  }
+}
+
+/* ── TOAST ────────────────────────────────────────────────────── */
+function showToast(msg, type='inf') {
+  const icons = {ok:'✅', bad:'❌', inf:'ℹ️'};
+  const el = document.createElement('div');
+  el.className = 'toast '+type;
+  el.innerHTML = `<span>${icons[type]}</span><span>${msg}</span>`;
+  const container = document.getElementById('toasts');
+  if (container) {
+    container.appendChild(el);
+    setTimeout(()=>el.remove(), 4500);
+  }
+}
+</script>
+</body>
+</html>
